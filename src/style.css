@@ -87,14 +87,48 @@ body,
 }
 
 .card.selected,
-.ringbtn.selected {
+.ringbtn.selected,
+.prioritybtn.selected,
+.speedbar button.selected {
   background: #2b4a7d;
   border-color: #7fb4ff;
   box-shadow: 0 0 10px rgba(127, 180, 255, 0.4);
 }
 
-.ringbtn {
+.ringbtn,
+.prioritybtn {
   font-size: 11px;
+}
+
+.danger {
+  border-color: #7d3a3a;
+  color: #ffc6bf;
+}
+
+.sat-readout {
+  border: 1px solid #24344f;
+  padding: 8px;
+  margin-bottom: 8px;
+  background: rgba(11, 18, 31, 0.75);
+  font-size: 11px;
+}
+
+.sat-readout b,
+.sat-readout span {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.priority-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.prioritybtn {
+  padding: 6px 5px;
+  text-align: center;
 }
 
 .stub {
@@ -170,6 +204,17 @@ body,
   justify-content: center;
   gap: 12px;
   padding: 14px;
+}
+
+.speedbar {
+  display: flex;
+  gap: 6px;
+}
+
+.speedbar button {
+  min-width: 58px;
+  padding: 10px 12px;
+  text-align: center;
 }
 
 button {
@@ -254,6 +299,10 @@ button.armed {
 
 #research.hidden {
   display: none;
+}
+
+.hidden {
+  display: none !important;
 }
 
 .research-panel {

@@ -1,12 +1,14 @@
-# Sprite Direction — Weapon Satellites
+# Sprite Direction — Weapon Satellites and M4 Enemies
 
 Art direction and implementable specs for the three weapon satellites (Missile
 Pod, Laser, Flak Cannon), replacing the current single-shape, palette-swapped
-placeholder in `src/render/sprites.ts`. Also covers projectile/beam/explosion
-cohesion and the M5 ComfyUI generation plan (DESIGN.md §13, §14).
+placeholder in `src/render/sprites.ts`. Also covers the M4 enemy sidecar
+textures (Fighter, Bomber, Carrier boss, bomber bomb), projectile/beam/explosion
+cohesion, and the M5 ComfyUI generation plan (DESIGN.md §13, §14).
 
-Scope: this document specifies art only. The code blocks in §3 are paste-ready
-for `src/render/sprites.ts` but nothing under `src/` is modified by this doc.
+Scope: this document specifies art only. The code blocks and export specs in §3
+map to `src/render/sprites.ts`; gameplay behavior and renderer wiring live
+outside this document.
 
 ---
 
@@ -29,12 +31,12 @@ Render facts that govern satellite sprites:
 
 Rules that follow directly:
 
-1. **16×16 is the canvas ceiling at scale 0.3.** A 24×24 canvas at the same
+1. **16×16 is the satellite canvas ceiling at scale 0.3.** A 24×24 canvas at the same
    scale puts texels well below one screen pixel; rows of the sprite will
    flicker in and out as satellites orbit. (If a bigger canvas is ever wanted,
    the sprite scale must rise proportionally — 24×24 wants scale 0.45 — which
-   changes the perceived gameplay size. Not recommended; all specs below are
-   16×16.)
+   changes the perceived gameplay size. Not recommended; all satellite specs
+   below are 16×16. The M4 carrier uses 32×32 because it is boss-scale art.)
 2. **No load-bearing 1×1 features.** Minimum feature size 2 px in at least one
    axis. Single pixels are allowed only as highlights inside a larger block of
    the same hue family (they degrade gracefully if dropped).
@@ -61,6 +63,8 @@ the weapon's existing projectile/beam art, so cohesion with effects is free.
 | Missile accent | `#2f6fd6` blue + warhead `#ff7b2a`/`#ffd23f` | Blue = ID color; warm tips match `missileTexture()`'s nose/exhaust. |
 | Laser accent | `#ff5a5a` bright / `#8f2c2c` dark / `#ffd9d9` white-hot | `#ff5a5a` is byte-exact the beam color `0xff5a5a` in `renderer.ts`. |
 | Flak accent | `#e8b13d` bright / `#9c6d1a` dark | `#e8b13d` is byte-exact the shell tracer in `flakShellTexture()`. |
+| Enemy hull | `#5a2638` wine / `#3a1d2c` recess | Hostile family, never large blue fields; paired with light grey cores for contrast. |
+| Enemy hot accents | `#ff5a5a`, `#ff7b2a`, `#ffd23f` | Small cockpit, hangar, engine, and bomb-bay lights. Warm colors avoid Earth ocean/land. |
 
 ### 1.3 Reading against starfield, day side, night side
 
@@ -188,6 +192,44 @@ red eye with dark wings, the flak is one solid light mass. Value distribution
 differs (light column / dark X / light drum), and the established blue / red /
 amber accents are retained as a third channel. No two designs share an axis,
 a mass pattern, or an accent hue.
+
+### 2.5 M4 enemy sidecar
+
+These are art-only exports in `src/render/sprites.ts`; wiring them to enemy
+types belongs to the M4 renderer/sim work, not this sidecar. The hostile family
+keeps the shared dark outline and light core rules, but uses wine-purple armor
+and warm red/orange/yellow lights so enemies do not resemble the blue/red/amber
+satellite weapon IDs.
+
+| Enemy | Texture export | Canvas | Silhouette axis | One-glance read |
+|---|---|---:|---|---|
+| Fighter | `fighterTexture()` | 16x16 | Narrow swept dart | Fast low-HP interceptor |
+| Bomber | `bomberTexture()` | 16x16 | Wide heavy wedge | Slow, tanky satellite attacker |
+| Carrier boss | `carrierTexture()` | 32x32 | Large armored hangar hull | Boss / fighter factory |
+| Bomber bomb | `bomberBombTexture()` | 8x8 | Compact red-core shell | Hostile satellite-attack projectile |
+
+**Fighter — "Needle Dart"**
+A small nose-up swept-wing craft: thin light-grey fuselage, dark wine wings,
+red cockpit, and a yellow/orange engine pixel cluster. It is intentionally much
+narrower than the bomber and much sharper than the asteroid blob. Drawn nose-up
+so the renderer can rotate it to heading when enemy-type rendering lands.
+
+**Bomber — "Anvil Wedge"**
+A broad armored wedge with a visible dark bomb bay, red cockpit, twin engine
+pods, and warm ordnance pips. Its width and mass communicate medium speed and
+satellite-threatening durability without borrowing the friendly flak drum's
+round turret silhouette.
+
+**Carrier — "Hangar Crown"**
+A 32x32 boss hull with a large armored outline, light center plating, side
+launch bays, a central hangar mouth, and paired engine lights. The larger canvas
+is reserved for boss scale and makes the launch-bay read possible; it should
+still be scaled by gameplay radius when wired.
+
+**Bomber bomb**
+An 8x8 dark-cased red-core projectile with a yellow tail flash. It uses the
+enemy warm accent family and should be rendered as hostile ordnance, distinct
+from the friendly flak shell's amber tracer core.
 
 ---
 
@@ -376,7 +418,20 @@ export function flakCannonTexture(): THREE.CanvasTexture {
 }
 ```
 
-### 3.4 Verification notes
+### 3.4 M4 enemy sidecar exports
+
+Implemented in `src/render/sprites.ts` as additive exports:
+
+- `fighterTexture()` — 16x16 "Needle Dart"; nose-up, heading-rotatable.
+- `bomberTexture()` — 16x16 "Anvil Wedge"; wide profile and visible bomb bay.
+- `carrierTexture()` — 32x32 "Hangar Crown"; boss-scale hangar hull with side
+  launch bays.
+- `bomberBombTexture()` — 8x8 hostile red-core bomb/projectile sidecar.
+
+Do not replace `asteroidTexture()` with these by default. M4 enemy-type wiring
+should choose the map based on the enemy kind once those mechanics exist.
+
+### 3.5 Verification notes
 
 Per CLAUDE.md, run the game headless (Playwright recipe) and screenshot, don't
 trust typecheck. Things to actually look at:
@@ -423,6 +478,9 @@ The accent palette was chosen so most of this is already true; the rest are
   authority on events), so it is flagged here, not specced.
 - **Asteroid / Earth / sun:** untouched; the warm-grey asteroid sits far from
   all three accents, which keeps friend/foe color separation clean.
+- **M4 enemy sidecar:** fighter/bomber/carrier use the hostile wine + warm-light
+  family and remain separate from the asteroid's warm-grey rock. `bomberBombTexture()`
+  should stay visually hostile and not be reused for player flak.
 
 ---
 
@@ -445,15 +503,21 @@ NearestFilter/no-mipmaps/SRGB settings `texFromCanvas` uses today.
 | `sat_missile.png` | 48×48 | idle A, idle B (dome blink), fire A (cell flash + smoke), fire B, damaged | 240×48 |
 | `sat_laser.png` | 48×48 | idle A, idle B (aperture pulse), fire A (aperture flare), fire B, overheat A (fins flushed), overheat B, damaged | 336×48 |
 | `sat_flak.png` | 48×48 | idle A, idle B (carousel cycle), fire A (N/S muzzle flash), fire B (E/W muzzle flash), damaged | 240×48 |
+| `enemy_fighter.png` | 32×32 | idle A, idle B (engine flicker), weave left, weave right, damaged | 160×32 |
+| `enemy_bomber.png` | 32×32 | idle A, idle B (engine flicker), bomb-bay open, firing, damaged | 160×32 |
+| `enemy_carrier.png` | 64×64 | idle A, idle B (hangar pulse), launch A, launch B, damaged, death flash | 384×64 |
 | `proj_missile.png` | 16×16 | flight A, flight B (exhaust flicker) | 32×16 |
 | `proj_flak.png` | 16×16 | single frame | 16×16 |
+| `proj_bomber_bomb.png` | 16×16 | flight A, flight B (tail flash) | 32×16 |
 | `fx_explosion.png` | 64×64 | 6-frame generic blast (stays tintable white/orange) | 384×64 |
 | `fx_flakburst.png` | 64×64 | 4-frame amber proximity burst | 256×64 |
 
 At 48×48 the satellites have 3× the texel density of the placeholders, but the
 on-screen size budget (§1.1) is unchanged — so generated frames must keep the
-same big shapes and only add texture *within* them. Sprite scale stays 0.3;
-the extra resolution pays off at close zoom (`minDistance` 2.5).
+same big shapes and only add texture *within* them. M4 enemy sheets follow the
+same rule at their own gameplay scales: preserve the shipped silhouette first,
+then add detail inside it. Sprite scale stays 0.3 for satellites; the extra
+resolution pays off at close zoom (`minDistance` 2.5).
 
 ### 5.2 Generation workflow
 
@@ -501,7 +565,22 @@ photorealistic, text, watermark`.
   vertical / horizontal pair of barrels`)
 - **Projectiles:** missile `tiny pixel art missile side view facing right,
   white body, orange nose cone, blue tail fins, yellow exhaust flame`; flak
-  shell `tiny pixel art shell, dark grey casing, glowing amber tracer core`.
+  shell `tiny pixel art shell, dark grey casing, glowing amber tracer core`;
+  bomber bomb `tiny hostile bomb projectile, dark grey casing, glowing red
+  core, small yellow tail flash`.
+- **Fighter:** `hostile space fighter, narrow swept dart silhouette, light grey
+  central fuselage, dark wine-purple swept wings, red cockpit canopy, small
+  yellow orange engine exhaust, no blue panels` (+weave variants: `banked left`
+  / `banked right`).
+- **Bomber:** `hostile space bomber, wide heavy armored wedge, light grey core
+  plating, dark wine-purple broad wings, visible dark bomb bay with red orange
+  ordnance lights, twin yellow engine pods, no blue panels` (+fire variant:
+  `bomb bay open and red projectile dropping`).
+- **Carrier boss:** `large hostile carrier mothership, armored hangar hull,
+  light grey central plating, dark wine-purple outer armor, side launch bays,
+  central black hangar mouth with red orange lights, paired yellow engines,
+  imposing boss sprite, no blue panels` (+launch variant: `small fighter
+  silhouettes emerging from side bays`).
 - **Explosions:** `pixel art explosion animation frame N of 6, expanding
   orange and yellow blast, white hot core` / flak burst `expanding amber
   shrapnel burst, ring of fragments` per frame.
@@ -514,8 +593,12 @@ photorealistic, text, watermark`.
 | `laserSatTexture(false)` | `sat_laser` idle A | yes — `satTex.laser` |
 | `laserSatTexture(true)` | `sat_laser` overheat A | needs heat exposed to renderer (small sim→render addition) |
 | `flakCannonTexture()` | `sat_flak` idle A | yes — `satTex.flak` |
+| `fighterTexture()` | `enemy_fighter` idle A | needs M4 enemy-type renderer wiring |
+| `bomberTexture()` | `enemy_bomber` idle A | needs M4 enemy-type renderer wiring |
+| `carrierTexture()` | `enemy_carrier` idle A | needs M4 enemy-type renderer wiring |
 | `missileTexture()` | `proj_missile` flight A | yes — missile quad material |
 | `flakShellTexture()` | `proj_flak` | yes — shell sprite material |
+| `bomberBombTexture()` | `proj_bomber_bomb` flight A | needs M4 bomber projectile wiring |
 | `explosionTexture()` | `fx_explosion` | yes — tinted per event |
 | — | fire frames | laser: derivable from `state.beams` presence per satId; missile/flak: cleanest as a sim "fired" event or per-sat reload timestamp surfaced to the renderer — flag for the M5 integrator |
 

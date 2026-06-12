@@ -3,6 +3,7 @@ import type { SimState } from '../sim/types'
 export interface HudCallbacks {
   onStartWave: () => void
   onRestart: () => void
+  onSpeedChange: (speed: number) => void
 }
 
 export class Hud {
@@ -14,6 +15,7 @@ export class Hud {
   private toastEl: HTMLElement
   private radarEl: HTMLElement
   private waveBtn: HTMLButtonElement
+  private speedBtns: HTMLButtonElement[] = []
   private overlayEl: HTMLElement
   private overlayStatsEl: HTMLElement
   private toastTimer = 0
@@ -32,6 +34,12 @@ export class Hud {
       <div class="radar" id="hud-radar"></div>
       <div class="status" id="hud-status"></div>
       <div class="bottombar">
+        <div class="speedbar" id="hud-speedbar">
+          <button data-speed="0">⏸</button>
+          <button data-speed="1">1×</button>
+          <button data-speed="2">2×</button>
+          <button data-speed="4">4×</button>
+        </div>
         <button id="hud-startwave">▶ Start Wave</button>
       </div>
       <div id="overlay" class="hidden">
@@ -48,10 +56,14 @@ export class Hud {
     this.toastEl = root.querySelector('#hud-toast')!
     this.radarEl = root.querySelector('#hud-radar')!
     this.waveBtn = root.querySelector('#hud-startwave')!
+    this.speedBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('#hud-speedbar button'))
     this.overlayEl = root.querySelector('#overlay')!
     this.overlayStatsEl = root.querySelector('#overlay-stats')!
 
     this.waveBtn.addEventListener('click', cb.onStartWave)
+    for (const btn of this.speedBtns) {
+      btn.addEventListener('click', () => cb.onSpeedChange(Number(btn.dataset.speed)))
+    }
     root.querySelector('#hud-restart')!.addEventListener('click', cb.onRestart)
   }
 
@@ -62,7 +74,7 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 2500)
   }
 
-  update(state: SimState, armedText: string | null, radarText: string | null): void {
+  update(state: SimState, armedText: string | null, radarText: string | null, speed: number): void {
     this.radarEl.textContent = radarText ?? ''
     this.creditsEl.textContent = `⬡ ${state.credits} cr`
     const pct = (state.earthHp / state.earthMaxHp) * 100
@@ -78,12 +90,17 @@ export class Hud {
     }
 
     this.waveBtn.disabled = state.phase !== 'build'
+    for (const btn of this.speedBtns) {
+      btn.classList.toggle('selected', Number(btn.dataset.speed) === speed)
+    }
 
     if (armedText) {
       this.statusEl.textContent = armedText
     } else if (state.phase === 'build') {
       this.statusEl.textContent =
         'Build phase: pick a weapon in the sidebar, then start the wave. Drag to rotate, scroll to zoom.'
+    } else if (speed === 0) {
+      this.statusEl.textContent = 'Paused'
     } else {
       this.statusEl.textContent = ''
     }

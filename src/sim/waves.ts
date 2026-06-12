@@ -12,8 +12,32 @@ import type { SpawnItem } from './types'
 // without pre-rolling their (random) bearings and timings.
 export function waveComposition(wave: number): { type: EnemyId; count: number }[] {
   const budget = WAVE_BASE_BUDGET * Math.pow(WAVE_BUDGET_GROWTH, wave - 1)
-  const count = Math.max(3, Math.round(budget / ENEMIES.asteroid.budgetCost))
-  return [{ type: 'asteroid', count }]
+  const groups: { type: EnemyId; count: number }[] = []
+  const bossWave = wave % 5 === 0
+  let remaining = budget
+
+  if (bossWave) {
+    groups.push({ type: 'carrier', count: 1 })
+    remaining = Math.max(budget * 0.45, budget - ENEMIES.carrier.budgetCost)
+  }
+
+  if (wave >= 8) {
+    const bomberBudget = remaining * (bossWave ? 0.12 : 0.22)
+    const count = Math.max(1, Math.floor(bomberBudget / ENEMIES.bomber.budgetCost))
+    groups.push({ type: 'bomber', count })
+    remaining -= count * ENEMIES.bomber.budgetCost
+  }
+
+  if (wave >= 4) {
+    const fighterBudget = remaining * (bossWave ? 0.55 : 0.36)
+    const count = Math.max(bossWave ? 4 : 2, Math.floor(fighterBudget / ENEMIES.fighter.budgetCost))
+    groups.push({ type: 'fighter', count })
+    remaining -= count * ENEMIES.fighter.budgetCost
+  }
+
+  const asteroidCount = Math.max(wave >= 4 ? 2 : 3, Math.round(remaining / ENEMIES.asteroid.budgetCost))
+  groups.push({ type: 'asteroid', count: asteroidCount })
+  return groups.filter((g) => g.count > 0)
 }
 
 export function generateWave(wave: number): SpawnItem[] {
@@ -33,7 +57,7 @@ export function generateWave(wave: number): SpawnItem[] {
         bearing: bearings[c] + (Math.random() - 0.5) * 0.5,
         dist: SPAWN_DIST + Math.random() * 0.6,
         hpMult,
-        speedMult: 0.9 + Math.random() * 0.2,
+        speedMult: 0.92 + Math.random() * 0.16,
       })
     }
   }

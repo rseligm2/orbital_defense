@@ -1,14 +1,19 @@
 // Research trees (DESIGN.md §6) — pure data. Node costs and effect magnitudes
 // are balance levers like everything else in src/data/.
 //
-// Deferred to M4 (need satellite HP / satellite inspection first): repair
-// drones, targeting computer, orbital transfer.
+// Deferred past M4: orbital transfer (needs a heavier satellite edit flow).
 
 import type { WeaponId } from './config'
 
 export type TreeId = WeaponId | 'rocketry' | 'global'
 
-export type ResearchFlag = 'mirv' | 'nuke' | 'beamSplitter' | 'shrapnel' | 'rapidDeploy'
+export type ResearchFlag =
+  | 'mirv'
+  | 'nuke'
+  | 'beamSplitter'
+  | 'shrapnel'
+  | 'rapidDeploy'
+  | 'targetingComputer'
 
 export type ResearchEffect =
   | { kind: 'stat'; weapon: WeaponId; stat: string; mult: number }
@@ -19,6 +24,7 @@ export type ResearchEffect =
   | { kind: 'heavyLift'; capacity: number }
   | { kind: 'salvageBonus'; bonus: number } // additive: +0.15 credits per kill each
   | { kind: 'radar'; depth: number } // waves of preview
+  | { kind: 'repairDrones'; duringWave: boolean }
 
 export interface ResearchNode {
   id: string
@@ -88,6 +94,9 @@ export const RESEARCH: ResearchNode[] = [
   { id: 'salvage-3', tree: 'global', name: 'Salvage III', desc: '+15% credits per kill', cost: 260, requires: 'salvage-2', effect: { kind: 'salvageBonus', bonus: 0.15 } },
   { id: 'radar-1', tree: 'global', name: 'Deep-Space Radar I', desc: 'Preview the next wave’s composition', cost: 120, effect: { kind: 'radar', depth: 1 } },
   { id: 'radar-2', tree: 'global', name: 'Deep-Space Radar II', desc: 'Preview two waves ahead', cost: 200, requires: 'radar-1', effect: { kind: 'radar', depth: 2 } },
+  { id: 'repair-1', tree: 'global', name: 'Repair Drones I', desc: 'Satellites regenerate HP between waves', cost: 140, effect: { kind: 'repairDrones', duringWave: false } },
+  { id: 'repair-2', tree: 'global', name: 'Repair Drones II', desc: 'Satellites regenerate slowly during waves', cost: 260, requires: 'repair-1', effect: { kind: 'repairDrones', duringWave: true } },
+  { id: 'targeting-computer', tree: 'global', name: 'Targeting Computer', desc: 'Set each satellite target priority', cost: 220, requires: 'radar-1', effect: { kind: 'flag', flag: 'targetingComputer' } },
 ]
 
 export const RESEARCH_BY_ID: Record<string, ResearchNode> = Object.fromEntries(

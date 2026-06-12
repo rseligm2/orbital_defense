@@ -1,6 +1,7 @@
-import type { EnemyId, WeaponId } from '../data/config'
+import type { EnemyId, TargetPriority, WeaponId } from '../data/config'
 
 export type Phase = 'build' | 'wave' | 'gameover'
+export type { TargetPriority }
 
 // Gameplay happens in a 2D plane (DESIGN.md §3); the render layer maps (x, y) -> (x, 0, z).
 export interface Vec2 {
@@ -13,6 +14,9 @@ export interface Satellite {
   weapon: WeaponId
   ring: number
   angle: number
+  hp: number
+  maxHp: number
+  priority: TargetPriority
   cooldown: number
   heat: number // beam weapons only
   overheated: boolean
@@ -30,10 +34,15 @@ export interface Enemy {
   radius: number
   damage: number
   reward: number
+  speed: number
+  cooldown: number
+  spawnTimer: number
+  targetSatId: number | null
+  weavePhase: number
   spin: number
 }
 
-export type ProjectileKind = 'missile' | 'shell'
+export type ProjectileKind = 'missile' | 'shell' | 'bomb'
 
 export interface Projectile {
   id: number
@@ -46,7 +55,7 @@ export interface Projectile {
   blastRadius: number
   fuseRadius: number // shells detonate this close to any enemy; missiles on contact
   shrapnel: boolean // researched flak: secondary damage ring on detonation
-  targetId: number // -1 for unguided shells
+  targetId: number // enemy id for missiles, satellite id for bombs, -1 for unguided shells
   ttl: number
 }
 
@@ -71,7 +80,9 @@ export interface SpawnItem {
 export type SimEvent =
   | { type: 'explosion'; x: number; y: number; size: number }
   | { type: 'earth-hit'; x: number; y: number; damage: number }
-  | { type: 'launch'; x: number; y: number }
+  | { type: 'satellite-hit'; x: number; y: number; damage: number }
+  | { type: 'satellite-destroyed'; x: number; y: number }
+  | { type: 'launch'; x: number; y: number; ring: number; angle: number; satId: number }
   | { type: 'wave-cleared'; wave: number; bonus: number }
   | { type: 'game-over' }
 

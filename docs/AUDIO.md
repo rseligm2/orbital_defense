@@ -1,9 +1,12 @@
 # Orbital Defense — Audio Design & Music Direction
 
-Status: design document for the M5 "sound + music" task (DESIGN.md §14). The
-audio *architecture* (§4 here) can land any time after M2 — it is a pure
-presentation layer with procedural placeholder sounds, so it does not block on
-M5 art or on real audio assets. Real assets (§5) are the M5 deliverable.
+Status: P0 procedural runtime implemented during M4 in `src/audio/`, and the
+M5 procedural soundtrack is now live in `MusicDirector`: it synthesizes pad,
+arp, bass, drum, and lead stems, crossfades build/wave phases, rotates three
+sets, and raises intensity from sim threat. `AudioDirector` consumes sim
+events/diffs from `main.ts`, `src/data/audio.ts` owns tuning, and `src/sim/`
+remains audio-free. Real music stems and final audio assets (§5) are still the
+asset-pass deliverable.
 
 Ground rules inherited from CLAUDE.md / DESIGN.md §13, restated because they
 bind everything below:
@@ -245,21 +248,22 @@ the carrier itself does:
 
 ```
 src/audio/
-  config.ts     all tunable audio numbers (bus levels, budgets, duck depth)
   engine.ts     AudioContext lifecycle, mixer buses, limiter, voice budgets
   sfx.ts        procedural one-shot patches + LaserVoice (placeholder synthesis)
   music.ts      MusicDirector: stem scheduler, intensity mapping, stingers
   director.ts   AudioDirector: consumes SimState/events; the only entry point
+src/data/audio.ts
+  all tunable audio numbers (bus levels, budgets, duck depth)
 ```
 
 The audio layer is a sibling of the render layer with the identical contract.
-In `src/main.ts`'s `frame()`, today the renderer consumes events and *then*
-main clears them:
+In `src/main.ts`'s `frame()`, audio and render both consume the current
+`state.events` burst before main clears it:
 
 ```ts
-// main.ts frame() — M5 sketch; audio slots in beside the renderer:
+// main.ts frame()
+audio.sync(state, state.events, dt)
 renderer.sync(state, dt)
-audio.sync(state, dt * 1000)   // must run BEFORE state.events.length = 0
 state.events.length = 0
 ```
 
@@ -269,8 +273,8 @@ Notes that fall out of the existing loop:
   events arrive in bursts — the voice budgets in §4.4 are the pressure valve,
   and they are **wall-clock** based (`performance.now()`), so 4× game speed
   does not mean 4× audio density.
-- `Hud`/`Sidebar` callbacks call tiny `audio.ui('arm' | 'cancel' | 'deny' |
-  'unlock' | 'confirm')` helpers at the hook points listed in §2c.
+- UI sounds listed in §2c are still P1. The M4 runtime covers P0 event and
+  derived-state sounds first.
 - `onRestart` must call `audio.reset()` — `createState()` restarts entity ids
   from 1, so the director's seen-id sets must be cleared.
 - Pause (M4): when main stops stepping the sim, `state.beams` freezes
@@ -292,7 +296,7 @@ musicBus ─→ duck gain ────┘
   deterministic): heavy SFX call `duckMusic(weight)`, which dips the duck gain
   fast (15 ms time constant) and recovers slow (400 ms). Explosions duck
   proportional to size; the wave-cleared fanfare and earth impacts duck hard.
-- Default levels (in `audio/config.ts`): master 1.0, sfx 0.9, music 0.5.
+- Default levels (in `src/data/audio.ts`): master 1.0, sfx 0.9, music 0.5.
   Music is mixed to sit well below SFX — informative, not foreground.
 
 ### 4.3 Engine + autoplay handling (sketch)
@@ -384,7 +388,7 @@ export class AudioEngine {
 }
 ```
 
-### 4.4 Voice budgets (in `audio/config.ts`)
+### 4.4 Voice budgets (in `src/data/audio.ts`)
 
 | Voice | minGapMs | maxConcurrent | Why |
 |---|---|---|---|
@@ -736,7 +740,9 @@ export class AudioDirector {
   private prevPhase: Phase = 'build'
 
   // Once per frame, after renderer.sync(state) and BEFORE main clears state.events.
-  sync(state: SimState, dtMs: number): void {
+  sync(state: SimState, dtSeconds: number): void {
+    const dtMs = dtSeconds * 1000
+
     // —— 1. One-shot sim events (same contract as GameRenderer.sync) ——
     for (const ev of state.events) {
       switch (ev.type) {
@@ -866,10 +872,12 @@ class MusicDirector {
 }
 ```
 
-Until real stems exist, `MusicDirector` can host a **procedural placeholder
-pad** (P1, optional): two triangle oscillators at A1/E2 with a 0.05 gain and a
-slow LFO on a low-pass — enough to make build phase feel inhabited and to
-exercise the duck/transition plumbing before M5 assets arrive.
+The current M5 implementation uses this contract procedurally instead of
+loading files: `MusicDirector` creates continuous pad/bass oscillators and
+schedules chip-style arp, drum, and lead one-shots on the 92 BPM grid. Build
+phase keeps pad + sparse arp; wave phase fades in bass/drums/lead according to
+derived threat, proximity, Earth damage, wave floor, and boss-wave pressure.
+This remains the zero-asset fallback after real stem files land.
 
 ### 4.8 Mute / volume UI (fits the existing DOM HUD)
 
@@ -884,7 +892,7 @@ exercise the duck/transition plumbing before M5 assets arrive.
 - **Persistence:** `localStorage` key `od.audio.v1` storing
   `{ muted, master, music, sfx }`, restored on boot — consistent with the
   DESIGN.md §13 versioned-localStorage plan before full save/load exists.
-- Audio defaults and the storage key live in `src/audio/config.ts`.
+- Audio defaults and the storage key live in `src/data/audio.ts`.
 
 ### 4.9 Headless verification note
 
@@ -973,20 +981,19 @@ procedural patches stay in the codebase as the zero-asset fallback.
 
 Each step is independently shippable and verifiable with the §4.9 harness:
 
-1. **Engine + mixer + autoplay unlock** (`engine.ts`, `audio/config.ts`) — no
-   triggers yet; verify `ctx.state` flips to `running` on first click.
+1. **Engine + mixer + autoplay unlock** (`engine.ts`, `src/data/audio.ts`) ✅
 2. **AudioDirector in the frame loop** + the three P0 event one-shots:
-   explosion, earth-hit, launch. (One `main.ts` insertion before
-   `state.events.length = 0`.) The game already *feels* alive here.
+   explosion, earth-hit, launch ✅
 3. **Phase-edge sounds:** wave-start klaxon, wave-cleared fanfare, game-over
-   stinger + `audio.reset()` on restart.
-4. **Laser beam voices** with linger + heat tell + overheat edge — the last
-   P0 item, and the first derived-state machinery.
-5. **UI hooks + mute/volume HUD + persistence** (`hud.ts`/`sidebar.ts`
+   stinger + `audio.reset()` on restart ✅
+4. **Laser beam voices** with linger + heat tell — the last P0 item, and the
+   first derived-state machinery ✅
+5. **Procedural MusicDirector:** pad/arp/bass/drum/lead synthesis, three set
+   rotation, build/wave crossfades, and threat-derived intensity ✅
+6. **UI hooks + mute/volume HUD + persistence** (`hud.ts`/`sidebar.ts`
    touchpoints, `m` key).
-6. **P1 pass:** missile/flak fire, sparks, overheat vent, error buzz, ring
+7. **P1 pass:** missile/flak fire, sparks, overheat vent, error buzz, ring
    unlock, arm/cancel; tune duck depths and voice budgets while watching a
    late wave.
-7. **MusicDirector** with the procedural pad placeholder; then swap in real
-   stems, sets, and the boss rule as M5 assets land (boss *music* can ship
-   keyed on `waveNumber % 5 === 0` before the M4 carrier exists).
+8. **Real music stems:** swap procedural stem generation for loaded stem
+   buffers while keeping the current phase/intensity API.

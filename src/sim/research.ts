@@ -1,7 +1,7 @@
 // Research purchases and the derived (post-research) stats the rest of the sim
 // reads. Pure TS — no Three.js, no DOM (DESIGN.md §13).
 
-import { RINGS, WEAPONS } from '../data/config'
+import { REPAIR_BETWEEN_WAVES, REPAIR_DURING_WAVES, RINGS, WEAPONS } from '../data/config'
 import type { WeaponConfig, WeaponId } from '../data/config'
 import { RESEARCH, RESEARCH_BY_ID } from '../data/research'
 import type { ResearchFlag } from '../data/research'
@@ -85,4 +85,17 @@ export function radarDepth(state: SimState): number {
     }
   }
   return depth
+}
+
+export function satelliteRepairRate(state: SimState): number {
+  let betweenWaves = false
+  let duringWaves = false
+  for (const node of RESEARCH) {
+    if (node.effect.kind !== 'repairDrones' || !state.research[node.id]) continue
+    betweenWaves = true
+    if (node.effect.duringWave) duringWaves = true
+  }
+  if (!betweenWaves) return 0
+  if (state.phase === 'wave') return duringWaves ? REPAIR_DURING_WAVES : 0
+  return REPAIR_BETWEEN_WAVES
 }

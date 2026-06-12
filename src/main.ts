@@ -1,4 +1,5 @@
 import './style.css'
+import { AudioDirector } from './audio'
 import { RINGS, WEAPONS } from './data/config'
 import type { WeaponId } from './data/config'
 import { RESEARCH_BY_ID, RING_RESEARCH_IDS } from './data/research'
@@ -7,6 +8,9 @@ import {
   closeLaunchBatch,
   createState,
   deployCost,
+  satPosition,
+  sellSatellite,
+  setSatellitePriority,
   startWave,
   step,
   tryPlaceSatellite,
@@ -24,10 +28,13 @@ const uiEl = document.getElementById('ui')!
 let state = createState()
 let armed: WeaponId | null = null
 let selectedRing = 0
+let selectedSatelliteId: number | null = null
 let ghostGaps: { plus: number; minus: number } | null = null
 let lastPointer: { x: number; y: number } | null = null
+let simSpeed = 1
 
 const renderer = new GameRenderer(sceneEl)
+const audio = new AudioDirector({ weaponStats: effectiveWeapon })
 
 function canDeployNow(): boolean {
   return state.phase === 'build' || (state.phase === 'wave' && hasFlag(state, 'rapidDeploy'))
@@ -38,6 +45,22 @@ function disarm(): void {
   ghostGaps = null
   closeLaunchBatch(state)
   renderer.setGhost(null)
+}
+
+function selectSatelliteAt(x: number, y: number): void {
+  let bestId: number | null = null
+  let bestD2 = 0.3 * 0.3
+  for (const sat of state.satellites) {
+    const pos = satPosition(sat)
+    const dx = pos.x - x
+    const dy = pos.y - y
+    const d2 = dx * dx + dy * dy
+    if (d2 <= bestD2) {
+      bestId = sat.id
+      bestD2 = d2
+    }
+  }
+  selectedSatelliteId = bestId
 }
 
 // Angular distance to the nearest neighbor each way around the ring — the phase
@@ -84,8 +107,16 @@ const hud = new Hud(uiEl, {
   onRestart: () => {
     state = createState()
     selectedRing = 0
+    selectedSatelliteId = null
+    simSpeed = 1
+    audio.reset()
+    audio.setPaused(false)
     research.close()
     disarm()
+  },
+  onSpeedChange: (speed) => {
+    simSpeed = speed
+    audio.setPaused(speed === 0)
   },
 })
 
@@ -132,6 +163,18 @@ const sidebar = new Sidebar(uiEl, {
   onResearchClick: () => {
     if (state.phase === 'build') research.toggle()
   },
+  onPriorityClick: (priority) => {
+    if (selectedSatelliteId !== null && setSatellitePriority(state, selectedSatelliteId, priority)) {
+      hud.toast(`Priority set to ${priority}`)
+    }
+  },
+  onSellClick: () => {
+    if (selectedSatelliteId !== null && sellSatellite(state, selectedSatelliteId)) {
+      selectedSatelliteId = null
+      hud.toast('Satellite sold')
+      refreshGhost()
+    }
+  },
 })
 
 const canvas = renderer.domElement
@@ -161,6 +204,14 @@ canvas.addEventListener('pointerup', (e) => {
       `Not enough credits — ${WEAPONS[armed].name} on ${RINGS[selectedRing].name} costs ${deployCost(state, armed, selectedRing)} cr`,
     )
   }
+})
+
+canvas.addEventListener('click', (e) => {
+  if (armed || e.button !== 0) return
+  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return
+  const p = renderer.screenToPlane(e.clientX, e.clientY)
+  if (!p) return
+  selectSatelliteAt(p.x, p.y)
 })
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -214,6 +265,7 @@ declare global {
       addCredits(n: number): void
       buy(id: string): boolean
       planeToScreen(x: number, y: number): { x: number; y: number }
+      setSpeed(speed: number): void
     }
   }
 }
@@ -227,6 +279,9 @@ if (import.meta.env.DEV) {
     },
     buy: (id) => tryResearch(state, id),
     planeToScreen: (x, y) => renderer.planeToScreen(x, y),
+    setSpeed(speed) {
+      simSpeed = speed
+    },
   }
 }
 
@@ -237,7 +292,7 @@ let acc = 0
 function frame(now: number): void {
   const dt = Math.min(now - last, 100) / 1000
   last = now
-  acc += dt
+  acc += dt * simSpeed
   while (acc >= DT) {
     step(state, DT)
     acc -= DT
@@ -245,16 +300,23 @@ function frame(now: number): void {
 
   if (armed && !canDeployNow()) disarm()
   if (research.isOpen && state.phase !== 'build') research.close()
+  if (
+    selectedSatelliteId !== null &&
+    !state.satellites.some((sat) => sat.id === selectedSatelliteId)
+  ) {
+    selectedSatelliteId = null
+  }
 
   for (const ev of state.events) {
     if (ev.type === 'wave-cleared') hud.toast(`Wave ${ev.wave} cleared — +${ev.bonus} cr bonus`)
   }
 
+  audio.sync(state, state.events, dt)
   renderer.sync(state, dt)
   state.events.length = 0
   renderer.render(dt)
-  hud.update(state, armedStatusText(), radarText())
-  sidebar.update(state, armed, selectedRing)
+  hud.update(state, armedStatusText(), radarText(), simSpeed)
+  sidebar.update(state, armed, selectedRing, selectedSatelliteId)
   research.update(state)
   requestAnimationFrame(frame)
 }

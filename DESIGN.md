@@ -14,10 +14,14 @@ satellites.
 - Pixel-art sprites (billboards in 3D), assets generated via ComfyUI.
 - Research completes instantly on purchase.
 
-**Status** (2026-06-11): M0–M3 complete — full loop, all three weapons, and
-the research layer (41 nodes across five trees), verified in-browser (see
-§14). Live tuning values in `src/data/config.ts` and `src/data/research.ts`
-supersede any starting numbers quoted in this document.
+**Status** (2026-06-12): M0–M4 complete — full loop, all three weapons, the
+research layer (44 nodes across five trees), M4 enemy depth, satellite HP,
+targeting priorities, speed controls, code-drawn M4 sprites, and P0 procedural
+audio are live and verified headlessly (see §14). M5 polish is partially live:
+gravity-turn launch animation with booster separation, a more Earth-like
+continent/city-light pass, Milky Way background, enemy health bars, and a
+procedural synth soundtrack. Live tuning values in `src/data/config.ts` and
+`src/data/research.ts` supersede any starting numbers quoted in this document.
 
 ---
 
@@ -48,6 +52,8 @@ Game over when Earth HP hits 0. Score = waves survived (+ kills, credits earned)
 ## 3. Playfield & camera (3D specifics)
 
 - Earth is a sphere at the origin with a pixel-art equirectangular texture.
+  Current placeholder art uses hand-drawn but geographically placed continents
+  instead of random land blobs.
 - **All gameplay happens in (or near) the equatorial plane in v1.** This is the
   crucial readability decision: it's effectively the 2D radial-TD design rendered
   in a 3D scene. Inclined/polar orbits are a Phase-2 feature (see §14).
@@ -63,11 +69,20 @@ Game over when Earth HP hits 0. Score = waves survived (+ kills, credits earned)
   translucent disc/ring around each satellite (toggleable).
 - **The sun (M2):** a visible sun sits far out in the scene and is the key
   light — Earth is lit by a single directional light from the sun's direction
-  with ambient kept low, so only the sun-facing hemisphere is illuminated
-  (day/night terminator). Sprites stay unlit/full-bright for readability. Sun
-  direction is fixed in v1 (slow drift is a cosmetic knob). Purely cosmetic for
-  now; possible Phase-2 hooks (solar-charged lasers, night-side stealth) are
-  deliberately not designed yet.
+  with ambient kept very low, so only the sun-facing hemisphere is illuminated
+  (day/night terminator). A separate additive night-light shell shows city
+  lights only on the dark side; its placement follows the NASA Black Marble /
+  VIIRS night-lights reference:
+  https://www.earthdata.nasa.gov/data/projects/black-marble. Sprites stay
+  unlit/full-bright for readability. Sun direction is fixed in v1 (slow drift
+  is a cosmetic knob). Purely cosmetic for now; possible Phase-2 hooks
+  (solar-charged lasers, night-side stealth) are deliberately not designed yet.
+- **Milky Way background (M5):** starfield now includes a dim procedural
+  Milky Way patch behind the existing point stars, anchored to one region of
+  the sky rather than wrapped around the whole backdrop. Composition follows
+  the NASA / Don Pettit ISS reference where the galaxy reads as a local band:
+  https://www.planetary.org/space-images/milky-way-from-iss-2. It is cosmetic
+  only.
 
 ## 4. Orbital mechanics
 
@@ -100,6 +115,7 @@ Game over when Earth HP hits 0. Score = waves survived (+ kills, credits earned)
 | | Missile Pod | Laser | Flak Cannon |
 |---|---|---|---|
 | Hardware cost | 100 | 150 | 80 |
+| Satellite HP | 80 | 70 | 90 |
 | Style | Homing, travel time | Hitscan beam | Proximity-fused AoE bursts |
 | Strength | High single-target dmg, small AoE | Never misses; melts fast enemies | Swarms, asteroid fragments |
 | Weakness | Slow reload, overkill on chaff | Overheats (duty cycle); low burst | Short range, weak vs big HP |
@@ -174,13 +190,16 @@ Default target priority for satellites: enemy closest to Earth within range.
 
 | Enemy | Behavior | Counters it |
 |---|---|---|
-| Asteroid | Slow, high HP, straight line; splits into 2–3 fragments on death | Missiles to crack, flak for fragments |
+| Asteroid | Slow, high HP, straight-line impact threat | Missiles to crack; flak for grouped rocks |
 | Fighter | Fast, low HP, weaves | Laser |
 | Bomber | Medium speed; stops and fires at satellites | Anything — but you must kill it before it kills your investment |
 | Carrier (boss, every 5th wave) | Huge HP, spawns fighters continuously | Sustained focus fire |
 
 Bombers introduce **satellite HP** (~wave 8). Destroyed satellites are gone —
-that's the real threat economy. Repair drones research softens it.
+that's the real threat economy. Repair drones research softens it. Satellite
+HP is weapon-specific (missile 80, laser 70, flak 90) and shown in the sidebar
+inspector. Bomber bombs are enemy projectiles that damage satellites only; they
+do not damage Earth directly unless the bomber itself reaches Earth.
 
 **Later roster ideas:** shielded cruiser (regenerating shield; lasers strip it),
 stealth raider (invisible without radar), kamikaze swarm, artillery platform
@@ -258,17 +277,21 @@ sky** above it (e.g., ±25°).
 - **Build phase:** select weapon in the sidebar → pick ring → click insertion
   angle on the ring; ghost shows range + phase gaps. **Right-click or Esc
   cancels placement** (M2 fix — v0.1 only had Esc, which nobody discovers, so
-  arming Missile Pod felt like a trap). Launch animation: rocket rises from
-  Earth to the ring (cosmetic, instant effect in v1). With heavy-lift
-  researched (M3), follow-up satellites to the same ring launch fee-free on
-  the open rocket — the batch closes on disarm, ring switch, or wave start.
+  arming Missile Pod felt like a trap). Launch animation: a ring-specific
+  rocket leaves the surface on a gravity-turn path, sheds a booster that falls
+  back toward Earth, and inserts visually at the selected orbit; the satellite
+  still exists in the sim immediately. With heavy-lift researched (M3),
+  follow-up satellites to the same ring launch fee-free on the open rocket —
+  the batch closes on disarm, ring switch, or wave start.
   (A queue-and-confirm launch UI is possible M5 polish; the fee-free
   follow-up model ships the economics with the existing click flow.)
 - **Defense phase:** speed controls 1×/2×/4× + pause. Incoming-wave banner.
   Radar panel (if researched) shows next wave composition.
 - Range-circle and orbit-trail toggles. Click a satellite to inspect (stats, HP,
-  kills, sell button, priority mode if researched).
-- HUD: credits, Earth HP, wave number, enemy count remaining.
+  sell button, priority mode if researched). Selling is build-phase only and
+  refunds 50% of hardware cost; launch fees are sunk.
+- HUD: credits, Earth HP, wave number, enemy count remaining. Enemy health
+  bars are billboarded render sprites over each enemy, not DOM HUD.
 - All menus/HUD are HTML/DOM overlay — never build UI inside the 3D canvas.
 
 ## 13. Tech architecture
@@ -296,10 +319,11 @@ src/
   512-wide equirect Earth texture. Nearest filtering everywhere.
   Sprite direction (distinct weapon-satellite silhouettes, generation prompts,
   sheet specs) lives in **docs/SPRITES.md** — the recommended placeholder set
-  is implemented in `sprites.ts` (incl. a laser overheat variant). Sound
-  design + music direction live in **docs/AUDIO.md**; the audio module is an
-  M5 task and must be a presentation-layer sibling of the renderer, consuming
-  `state.events` with zero sim changes.
+  is implemented in `sprites.ts` (incl. laser overheat, fighter, bomber,
+  carrier, and bomber-bomb variants). Sound design + music direction live in
+  **docs/AUDIO.md**; `src/audio/` is a presentation-layer sibling of the
+  renderer, consuming `state.events` and derived sim diffs with zero sim
+  imports in `src/sim/`.
 
 ## 14. Milestones
 
@@ -349,10 +373,28 @@ src/
   mid-wave placement with rapid deployment. *Deferred to M4* (need satellite
   HP + click-to-inspect first): repair drones, targeting computer, orbital
   transfer.
-- **M4 — Depth:** fighters, bombers + satellite HP, carrier boss, targeting
-  priorities, speed controls, first real balance pass.
-- **M5 — Polish:** swap in pixel sprites, explosions/particles, sound + music,
-  screen shake, pixelation pass, save/load, difficulty curve tuning.
+- **M4 — Depth** ✅ *(2026-06-11)*: enemy roster now uses `EnemyId =
+  asteroid | fighter | bomber | carrier` with deterministic radar preview:
+  fighters unlock around wave 4, bombers around wave 8, and every 5th wave
+  includes a carrier boss plus escorts. Fighters weave with lateral motion;
+  bombers park in attack range and fire homing bombs at satellites; carriers
+  drift inward and continuously spawn fighters. Satellites have HP, can be
+  clicked for a sidebar inspector, can be sold during build phase, and support
+  per-satellite priorities (`closest`, `strongest`, `weakest`, `fastest`) after
+  Targeting Computer. Repair Drones I/II now repair between waves / during
+  waves. Speed controls (pause, 1×, 2×, 4×) drive the fixed-timestep
+  accumulator. The requested sidecars also landed: code-drawn fighter, bomber,
+  carrier, and bomb sprites; `src/audio/` with P0 procedural WebAudio sounds
+  and laser beam loops consuming events/diffs. Verified headless: priority
+  setting mutates sim state, bomber bombs reduce satellite HP, boss wave spawns
+  carrier/fighters, 4× advances sim time faster, pause freezes it, and the
+  rendered scene/screenshots are nonblank.
+- **M5 — Polish** ◐ *(started 2026-06-12)*: gravity-turn launch animation with
+  ring-specific rocket sprites, booster separation/fall-back, Earth continent
+  pass with dark night side + city lights, procedural Milky Way, enemy health
+  bars, and procedural synth soundtrack are live. Remaining: final ComfyUI
+  sprite sheets, real audio assets/stems on top of the procedural runtime,
+  screen shake, save/load, difficulty curve tuning, and broader balance passes.
 - **Phase 2 (post-v1):** ground layer (§8), geostationary pinning, deep-tech
   megaprojects (§6) starting with the orbital gantry, inclined/polar orbital
   planes with out-of-plane attacks, more weapons (§5), more enemies (§7),

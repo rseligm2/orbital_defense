@@ -4,8 +4,8 @@ Web tower defense: weapon satellites orbit a 3D pixel-art Earth and auto-fire
 at enemies inbound from deep space. **DESIGN.md is the authoritative design
 document** — check the relevant section before adding mechanics, and update it
 when a design decision changes. Build progress lives in DESIGN.md §14
-(currently: M3 research done; M4 depth — fighters, bombers, satellite HP,
-carrier boss — is next).
+(currently: M4 depth done; M5 polish — real asset sheets, music/assets,
+screen shake, save/load — is next).
 
 ## Commands
 
@@ -23,9 +23,9 @@ carrier boss — is next).
 - `src/render/` (`GameRenderer`) is the only place Three.js appears. Entities
   are billboarded sprites keyed by sim entity id; placeholder pixel art is
   drawn in code in `sprites.ts` (design specs in `docs/SPRITES.md`; real
-  ComfyUI sprite sheets are an M5 task). Sound design for the M5 audio task
-  is in `docs/AUDIO.md` — audio must consume `state.events` like the
-  renderer does, never from inside `src/sim/`.
+  ComfyUI sprite sheets are an M5 task). Runtime audio lives in `src/audio/`
+  with design notes in `docs/AUDIO.md` — audio must consume `state.events` and
+  derived sim diffs like the renderer does, never from inside `src/sim/`.
 - All menus/HUD are DOM overlay in `src/ui/` — never drawn inside the canvas.
 - Every tunable gameplay number lives in `src/data/config.ts`. Balance changes
   are config edits, not code edits.
@@ -45,12 +45,14 @@ no browser and no passwordless sudo; the working headless recipe:
    Look at the screenshots — don't trust HUD text alone.
 4. The HUD is DOM: `#hud-startwave`, `#hud-credits`, `#hud-wave`,
    `#hud-hptext`, plus the sidebar's weapon cards `#weapon-missile|laser|flak`
-   and ring buttons `#ring-0`–`#ring-3`. Place satellites by clicking a weapon
-   card, then `page.mouse.move(x, y)` + `down()`/`up()` at the same point —
-   moving >6 px between down and up is treated as a camera drag, not a
-   placement click.
+   and ring buttons `#ring-0`–`#ring-3`. Speed controls are in
+   `#hud-speedbar`; satellite inspector priority buttons use `.prioritybtn`.
+   Place satellites by clicking a weapon card, then `page.mouse.move(x, y)` +
+   `down()`/`up()` at the same point — moving >6 px between down and up is
+   treated as a camera drag, not a placement click.
 5. Dev builds expose `window.__od` with `state` (live sim state),
    `addCredits(n)`, `buy(researchNodeId)`, and `planeToScreen(x, y)` (sim
    coords → client px) for aiming placement clicks and asserting on sim
-   internals. The research screen opens via `#open-research` (build phase
-   only); node buttons are `#rs-<node-id>` (ids in `src/data/research.ts`).
+   internals. `setSpeed(n)` drives M4 speed/pause tests. The research screen
+   opens via `#open-research` (build phase only); node buttons are
+   `#rs-<node-id>` (ids in `src/data/research.ts`).

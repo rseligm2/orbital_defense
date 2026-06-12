@@ -1,8 +1,8 @@
 // Left sidebar command surface (DESIGN.md §12): weapon selection, ring
 // selection/unlocks (shortcut into the rocketry tree), and the research button.
 
-import { RINGS, WEAPONS } from '../data/config'
-import type { WeaponId } from '../data/config'
+import { RINGS, TARGET_PRIORITIES, WEAPONS } from '../data/config'
+import type { TargetPriority, WeaponId } from '../data/config'
 import { RESEARCH, RESEARCH_BY_ID, RING_RESEARCH_IDS } from '../data/research'
 import { deployCost } from '../sim/sim'
 import { hasFlag, launchFee } from '../sim/research'
@@ -15,6 +15,8 @@ export interface SidebarCallbacks {
   onWeaponClick: (weapon: WeaponId) => void
   onRingClick: (ring: number) => void
   onResearchClick: () => void
+  onPriorityClick: (priority: TargetPriority) => void
+  onSellClick: () => void
 }
 
 export class Sidebar {
@@ -23,6 +25,12 @@ export class Sidebar {
   private ringBtns: HTMLButtonElement[] = []
   private researchBtn: HTMLButtonElement
   private researchCountEl: HTMLElement
+  private satPanel: HTMLElement
+  private satTitleEl: HTMLElement
+  private satHpEl: HTMLElement
+  private satPriorityEl: HTMLElement
+  private priorityBtns = new Map<TargetPriority, HTMLButtonElement>()
+  private sellBtn: HTMLButtonElement
 
   constructor(root: HTMLElement, cb: SidebarCallbacks) {
     const el = document.createElement('div')
@@ -53,6 +61,18 @@ export class Sidebar {
           <span>Open with R</span>
         </button>
       </div>
+      <div class="section hidden" id="sat-panel">
+        <h3>Satellite</h3>
+        <div class="sat-readout">
+          <b id="sat-title"></b>
+          <span id="sat-hp"></span>
+          <span id="sat-priority"></span>
+        </div>
+        <div class="priority-grid">
+          ${TARGET_PRIORITIES.map((p) => `<button class="prioritybtn" data-priority="${p}">${p}</button>`).join('')}
+        </div>
+        <button class="card danger" id="sat-sell">Sell</button>
+      </div>
     `
     root.appendChild(el)
 
@@ -70,9 +90,25 @@ export class Sidebar {
     this.researchBtn = el.querySelector<HTMLButtonElement>('#open-research')!
     this.researchBtn.addEventListener('click', cb.onResearchClick)
     this.researchCountEl = el.querySelector<HTMLElement>('#research-count')!
+    this.satPanel = el.querySelector<HTMLElement>('#sat-panel')!
+    this.satTitleEl = el.querySelector<HTMLElement>('#sat-title')!
+    this.satHpEl = el.querySelector<HTMLElement>('#sat-hp')!
+    this.satPriorityEl = el.querySelector<HTMLElement>('#sat-priority')!
+    this.sellBtn = el.querySelector<HTMLButtonElement>('#sat-sell')!
+    this.sellBtn.addEventListener('click', cb.onSellClick)
+    for (const p of TARGET_PRIORITIES) {
+      const btn = el.querySelector<HTMLButtonElement>(`.prioritybtn[data-priority="${p}"]`)!
+      btn.addEventListener('click', () => cb.onPriorityClick(p))
+      this.priorityBtns.set(p, btn)
+    }
   }
 
-  update(state: SimState, armed: WeaponId | null, selectedRing: number): void {
+  update(
+    state: SimState,
+    armed: WeaponId | null,
+    selectedRing: number,
+    selectedSatelliteId: number | null,
+  ): void {
     const build = state.phase === 'build'
     const canDeploy = build || (state.phase === 'wave' && hasFlag(state, 'rapidDeploy'))
 
@@ -105,5 +141,22 @@ export class Sidebar {
     this.researchBtn.disabled = !build
     const owned = Object.keys(state.research).length
     this.researchCountEl.textContent = `${owned}/${RESEARCH.length} projects`
+
+    const sat =
+      selectedSatelliteId === null ? null : state.satellites.find((s) => s.id === selectedSatelliteId)
+    this.satPanel.classList.toggle('hidden', !sat)
+    if (!sat) return
+
+    const weapon = WEAPONS[sat.weapon]
+    this.satTitleEl.textContent = `${weapon.name} #${sat.id}`
+    this.satHpEl.textContent = `HP ${Math.ceil(sat.hp)}/${sat.maxHp}`
+    this.satPriorityEl.textContent = `Priority: ${sat.priority}`
+    const targeting = hasFlag(state, 'targetingComputer')
+    for (const [priority, btn] of this.priorityBtns) {
+      btn.disabled = !targeting
+      btn.classList.toggle('selected', sat.priority === priority)
+    }
+    this.sellBtn.disabled = state.phase !== 'build'
+    this.sellBtn.textContent = `Sell · ${Math.round(weapon.hardwareCost * 0.5)} cr`
   }
 }
