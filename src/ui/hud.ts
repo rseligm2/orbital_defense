@@ -1,8 +1,6 @@
-import { placementCost } from '../data/config'
 import type { SimState } from '../sim/types'
 
 export interface HudCallbacks {
-  onToggleArm: () => void
   onStartWave: () => void
   onRestart: () => void
 }
@@ -14,12 +12,11 @@ export class Hud {
   private waveEl: HTMLElement
   private statusEl: HTMLElement
   private toastEl: HTMLElement
-  private launchBtn: HTMLButtonElement
+  private radarEl: HTMLElement
   private waveBtn: HTMLButtonElement
   private overlayEl: HTMLElement
   private overlayStatsEl: HTMLElement
   private toastTimer = 0
-  private launchCost = placementCost('missile', 0)
 
   constructor(root: HTMLElement, cb: HudCallbacks) {
     root.innerHTML = `
@@ -32,9 +29,9 @@ export class Hud {
         <div class="readout" id="hud-wave"></div>
       </div>
       <div class="toast" id="hud-toast"></div>
+      <div class="radar" id="hud-radar"></div>
       <div class="status" id="hud-status"></div>
       <div class="bottombar">
-        <button id="hud-launch">🚀 Missile Pod — ${this.launchCost} cr</button>
         <button id="hud-startwave">▶ Start Wave</button>
       </div>
       <div id="overlay" class="hidden">
@@ -49,12 +46,11 @@ export class Hud {
     this.waveEl = root.querySelector('#hud-wave')!
     this.statusEl = root.querySelector('#hud-status')!
     this.toastEl = root.querySelector('#hud-toast')!
-    this.launchBtn = root.querySelector('#hud-launch')!
+    this.radarEl = root.querySelector('#hud-radar')!
     this.waveBtn = root.querySelector('#hud-startwave')!
     this.overlayEl = root.querySelector('#overlay')!
     this.overlayStatsEl = root.querySelector('#overlay-stats')!
 
-    this.launchBtn.addEventListener('click', cb.onToggleArm)
     this.waveBtn.addEventListener('click', cb.onStartWave)
     root.querySelector('#hud-restart')!.addEventListener('click', cb.onRestart)
   }
@@ -66,7 +62,8 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 2500)
   }
 
-  update(state: SimState, armed: boolean): void {
+  update(state: SimState, armedText: string | null, radarText: string | null): void {
+    this.radarEl.textContent = radarText ?? ''
     this.creditsEl.textContent = `⬡ ${state.credits} cr`
     const pct = (state.earthHp / state.earthMaxHp) * 100
     this.hpFillEl.style.width = `${pct}%`
@@ -80,14 +77,13 @@ export class Hud {
       this.waveEl.textContent = `WAVE ${state.waveNumber}`
     }
 
-    this.launchBtn.disabled = state.phase !== 'build' || (!armed && state.credits < this.launchCost)
-    this.launchBtn.classList.toggle('armed', armed)
     this.waveBtn.disabled = state.phase !== 'build'
 
-    if (armed) {
-      this.statusEl.textContent = 'Click the orbit ring to launch — Esc to cancel'
+    if (armedText) {
+      this.statusEl.textContent = armedText
     } else if (state.phase === 'build') {
-      this.statusEl.textContent = 'Build phase: deploy satellites, then start the wave. Drag to rotate, scroll to zoom.'
+      this.statusEl.textContent =
+        'Build phase: pick a weapon in the sidebar, then start the wave. Drag to rotate, scroll to zoom.'
     } else {
       this.statusEl.textContent = ''
     }

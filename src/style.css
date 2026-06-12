@@ -30,10 +30,93 @@ body,
   user-select: none;
 }
 
-.topbar {
+#sidebar {
   position: absolute;
   top: 0;
   left: 0;
+  bottom: 0;
+  width: 210px;
+  background: rgba(8, 12, 22, 0.92);
+  border-right: 1px solid #24344f;
+  padding: 12px 10px;
+  pointer-events: auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+#sidebar h2 {
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  color: #7fb4ff;
+  text-align: center;
+}
+
+.section h3 {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 6px;
+}
+
+.card,
+.ringbtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  padding: 7px 9px;
+}
+
+.card b {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+
+.card span {
+  display: block;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.card .cost.short {
+  color: #ff8a7a;
+}
+
+.card.selected,
+.ringbtn.selected {
+  background: #2b4a7d;
+  border-color: #7fb4ff;
+  box-shadow: 0 0 10px rgba(127, 180, 255, 0.4);
+}
+
+.ringbtn {
+  font-size: 11px;
+}
+
+.stub {
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.stub-row {
+  padding: 5px 2px;
+  border-bottom: 1px dashed #24344f;
+}
+
+.stub-note {
+  padding-top: 7px;
+  font-style: italic;
+  font-size: 10px;
+}
+
+.topbar {
+  position: absolute;
+  top: 0;
+  left: 210px;
   right: 0;
   display: flex;
   justify-content: space-between;
@@ -81,7 +164,7 @@ body,
 .bottombar {
   position: absolute;
   bottom: 0;
-  left: 0;
+  left: 210px;
   right: 0;
   display: flex;
   justify-content: center;
@@ -120,7 +203,7 @@ button.armed {
 .status {
   position: absolute;
   bottom: 66px;
-  left: 0;
+  left: 210px;
   right: 0;
   text-align: center;
   font-size: 13px;
@@ -131,7 +214,7 @@ button.armed {
 .toast {
   position: absolute;
   top: 64px;
-  left: 0;
+  left: 210px;
   right: 0;
   text-align: center;
   font-size: 15px;
@@ -143,6 +226,108 @@ button.armed {
 
 .toast.show {
   opacity: 1;
+}
+
+.radar {
+  position: absolute;
+  top: 44px;
+  left: 210px;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #9fd4ff;
+  opacity: 0.85;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
+}
+
+#research {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 5, 12, 0.88);
+  pointer-events: auto;
+  z-index: 5;
+}
+
+#research.hidden {
+  display: none;
+}
+
+.research-panel {
+  max-width: 1150px;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 18px 22px;
+  background: rgba(8, 12, 22, 0.95);
+  border: 1px solid #24344f;
+}
+
+.research-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.research-head h1 {
+  font-size: 18px;
+  letter-spacing: 0.3em;
+  color: #7fb4ff;
+}
+
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(180px, 210px));
+  gap: 14px;
+}
+
+.tree h3 {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 7px;
+}
+
+.rnode {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+}
+
+.rnode b {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.rnode span {
+  display: block;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.rnode .rcost.short {
+  color: #ff8a7a;
+}
+
+.rnode.owned {
+  border-color: #2f7a4c;
+  opacity: 0.85;
+}
+
+.rnode.owned b,
+.rnode.owned .rcost {
+  color: #8fe3ad;
+}
+
+.rnode.locked {
+  opacity: 0.45;
 }
 
 #overlay {

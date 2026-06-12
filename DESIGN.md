@@ -14,9 +14,10 @@ satellites.
 - Pixel-art sprites (billboards in 3D), assets generated via ComfyUI.
 - Research completes instantly on purchase.
 
-**Status** (2026-06-11): M0 + M1 complete — playable core built and verified
-in-browser (see §14). Live tuning values in `src/data/config.ts` supersede any
-starting numbers quoted in this document.
+**Status** (2026-06-11): M0–M3 complete — full loop, all three weapons, and
+the research layer (41 nodes across five trees), verified in-browser (see
+§14). Live tuning values in `src/data/config.ts` and `src/data/research.ts`
+supersede any starting numbers quoted in this document.
 
 ---
 
@@ -60,6 +61,13 @@ Game over when Earth HP hits 0. Score = waves survived (+ kills, credits earned)
   graphics toggle.
 - Orbit rings drawn as subtle glowing line loops; weapon range shown as a
   translucent disc/ring around each satellite (toggleable).
+- **The sun (M2):** a visible sun sits far out in the scene and is the key
+  light — Earth is lit by a single directional light from the sun's direction
+  with ambient kept low, so only the sun-facing hemisphere is illuminated
+  (day/night terminator). Sprites stay unlit/full-bright for readability. Sun
+  direction is fixed in v1 (slow drift is a cosmetic knob). Purely cosmetic for
+  now; possible Phase-2 hooks (solar-charged lasers, night-side stealth) are
+  deliberately not designed yet.
 
 ## 4. Orbital mechanics
 
@@ -244,10 +252,18 @@ sky** above it (e.g., ±25°).
 
 ## 12. UX
 
-- **Build phase:** build menu (DOM) → pick weapon → pick ring → click insertion
-  angle on the ring; ghost shows range + phase gaps. Launch animation: rocket
-  rises from Earth to the ring (cosmetic, instant effect in v1). With heavy-lift
-  researched, queue 2–3 satellites into one launch before confirming.
+- **Left sidebar (M2), the main command surface:** persistent DOM panel on the
+  left edge with sections for Weapons (select a type to arm placement; costs
+  shown) and Research (stubbed/locked in M2, filled in by M3).
+- **Build phase:** select weapon in the sidebar → pick ring → click insertion
+  angle on the ring; ghost shows range + phase gaps. **Right-click or Esc
+  cancels placement** (M2 fix — v0.1 only had Esc, which nobody discovers, so
+  arming Missile Pod felt like a trap). Launch animation: rocket rises from
+  Earth to the ring (cosmetic, instant effect in v1). With heavy-lift
+  researched (M3), follow-up satellites to the same ring launch fee-free on
+  the open rocket — the batch closes on disarm, ring switch, or wave start.
+  (A queue-and-confirm launch UI is possible M5 polish; the fee-free
+  follow-up model ships the economics with the existing click flow.)
 - **Defense phase:** speed controls 1×/2×/4× + pause. Incoming-wave banner.
   Radar panel (if researched) shows next wave composition.
 - Range-circle and orbit-trail toggles. Click a satellite to inspect (stats, HP,
@@ -278,6 +294,12 @@ src/
 - **Asset pipeline:** ComfyUI-generated pixel sprite sheets. Suggested sizes:
   32×32 enemies, 48×48 satellites, 16×16 projectiles, 64×64 explosion sheets,
   512-wide equirect Earth texture. Nearest filtering everywhere.
+  Sprite direction (distinct weapon-satellite silhouettes, generation prompts,
+  sheet specs) lives in **docs/SPRITES.md** — the recommended placeholder set
+  is implemented in `sprites.ts` (incl. a laser overheat variant). Sound
+  design + music direction live in **docs/AUDIO.md**; the audio module is an
+  M5 task and must be a presentation-layer sibling of the renderer, consuming
+  `state.events` with zero sim changes.
 
 ## 14. Milestones
 
@@ -295,10 +317,38 @@ src/
   0.16→0.13, missile range 1.5→1.7, reload 1.8→1.4 s, starting credits
   350→400 (three satellites affordable up front).
   *The "is this fun?" checkpoint — playtest before building M2 on top.*
-- **M2 — Full loop:** build/wave phase machine, launch UI with ghost preview,
-  all 3 weapons, Rings 2–4 behind rocketry unlocks, launch-fee economy.
-- **M3 — Research:** research screen (DOM), per-weapon trees, rocketry tree
-  (incl. reusable boosters + heavy-lift), global tree, radar wave preview.
+- **M2 — Full loop** ✅ *(2026-06-11)*: left-sidebar command menu (weapon
+  cards with hardware + fee cost breakdown, ring selector, research section
+  stubbed for M3); ghost preview scales to the armed weapon's range and shows
+  the §4 phase indicator (arcs to ring neighbors + gap degrees in the status
+  bar); right-click/Esc both cancel placement; all 3 weapons live (laser =
+  hitscan beam with heat/overheat duty cycle, flak = unguided lead-aimed
+  shells with proximity-fused AoE bursts, missiles gained a small AoE);
+  launch-fee economy surfaced in the UI; visible pixel sun, low ambient +
+  directional sunlight gives the day/night terminator. *Interim design
+  decision:* Rings 2–4 unlock by buying Rocketry I–III directly from the ring
+  list (sequential, 150/300/500 cr in `config.ts`); the M3 research screen
+  absorbs these as the rocketry tree's first nodes. Satellites are color-coded
+  by weapon until real sprites land (M5). Verified headless: wave cleared by a
+  mixed missile/laser/flak ring with zero Earth damage; laser hit heat cap and
+  recovered; MEO unlock + placement priced correctly (190 cr laser = 150 hw +
+  40 fee); GEO unpurchasable before HEO.
+- **M3 — Research** ✅ *(2026-06-11)*: research screen (DOM overlay, R key or
+  sidebar button, build phase only) with all five trees — 41 nodes in
+  `src/data/research.ts` (typed effects folded into derived weapon stats by
+  `src/sim/research.ts`). Per-weapon trees incl. MIRV (3 warheads @60%, up to
+  3 targets), Nuke (every 5th launch, 3× damage, 4× blast), Beam Splitter
+  (second beam @50%), Shrapnel (50% damage in a 1.6× fragment ring), Extended
+  Fuses. Rocketry: ring unlocks moved into the tree (sidebar ring buttons
+  remain a shortcut), reusable boosters (−30%/−60% fees), heavy-lift
+  (fee-free follow-ups, see §12), rapid deployment (launch mid-wave). Global:
+  planetary armor, salvage, deep-space radar (HUD preview of the next 1–2
+  waves' composition — `waveComposition()` is deterministic per wave number,
+  so the preview needs no pre-rolling). Verified headless: prereq gating,
+  exact fee/batch/salvage math, MIRV volleys at 15 damage (20 × 1.25 × 0.6),
+  mid-wave placement with rapid deployment. *Deferred to M4* (need satellite
+  HP + click-to-inspect first): repair drones, targeting computer, orbital
+  transfer.
 - **M4 — Depth:** fighters, bombers + satellite HP, carrier boss, targeting
   priorities, speed controls, first real balance pass.
 - **M5 — Polish:** swap in pixel sprites, explosions/particles, sound + music,

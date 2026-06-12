@@ -1,18 +1,27 @@
 // Pure simulation: no Three.js, no DOM (DESIGN.md §13). Fixed-timestep `step` plus
-// the player commands `tryPlaceSatellite` and `startWave`.
+// the player commands `tryPlaceSatellite`, `tryResearch` (see research.ts),
+// `closeLaunchBatch`, and `startWave`.
 
 import {
+  BEAM_SPLIT_RATIO,
   EARTH_MAX_HP,
   EARTH_RADIUS,
   ENEMIES,
+  MIRV_DAMAGE_MULT,
+  MIRV_WARHEADS,
+  NUKE_BLAST_MULT,
+  NUKE_DAMAGE_MULT,
+  NUKE_EVERY,
   RINGS,
+  SHRAPNEL_DAMAGE_MULT,
+  SHRAPNEL_RADIUS_MULT,
   STARTING_CREDITS,
   WEAPONS,
-  placementCost,
   waveClearBonus,
 } from '../data/config'
-import type { WeaponId } from '../data/config'
+import type { HomingWeaponConfig, WeaponId } from '../data/config'
 import { generateWave } from './waves'
+import { effectiveWeapon, hasFlag, heavyLiftCapacity, launchFee, salvageMult } from './research'
 import type { Enemy, Satellite, SimState, Vec2 } from './types'
 
 export function createState(): SimState {
@@ -26,9 +35,13 @@ export function createState(): SimState {
     waveNumber: 1,
     kills: 0,
     creditsEarned: 0,
+    unlockedRings: 1,
+    research: {},
+    launchBatch: null,
     satellites: [],
     enemies: [],
     projectiles: [],
+    beams: [],
     spawnQueue: [],
     nextId: 1,
     events: [],
@@ -44,25 +57,61 @@ export function satPosition(sat: Satellite): Vec2 {
   return { x: Math.cos(sat.angle) * r, y: Math.sin(sat.angle) * r }
 }
 
+// Hardware + launch fee, after booster discounts and any open heavy-lift batch.
+export function deployCost(state: SimState, weapon: WeaponId, ring: number): number {
+  const batched =
+    state.launchBatch !== null && state.launchBatch.ring === ring && state.launchBatch.remaining > 0
+  return WEAPONS[weapon].hardwareCost + (batched ? 0 : launchFee(state, ring))
+}
+
+function canDeploy(state: SimState): boolean {
+  return state.phase === 'build' || (state.phase === 'wave' && hasFlag(state, 'rapidDeploy'))
+}
+
 export function tryPlaceSatellite(
   state: SimState,
   weapon: WeaponId,
   ring: number,
   angle: number,
 ): boolean {
-  if (state.phase !== 'build' || !RINGS[ring].unlocked) return false
-  const cost = placementCost(weapon, ring)
+  if (!canDeploy(state) || ring >= state.unlockedRings) return false
+  const cost = deployCost(state, weapon, ring)
   if (state.credits < cost) return false
   state.credits -= cost
-  const sat: Satellite = { id: state.nextId++, weapon, ring, angle, cooldown: 0 }
+
+  if (state.launchBatch && state.launchBatch.ring === ring && state.launchBatch.remaining > 0) {
+    state.launchBatch.remaining -= 1
+    if (state.launchBatch.remaining === 0) state.launchBatch = null
+  } else {
+    const cap = heavyLiftCapacity(state)
+    state.launchBatch = cap > 1 ? { ring, remaining: cap - 1 } : null
+  }
+
+  const sat: Satellite = {
+    id: state.nextId++,
+    weapon,
+    ring,
+    angle,
+    cooldown: 0,
+    heat: 0,
+    overheated: false,
+    sparkTimer: 0,
+    shots: 0,
+  }
   state.satellites.push(sat)
   const pos = satPosition(sat)
   state.events.push({ type: 'launch', x: pos.x, y: pos.y })
   return true
 }
 
+// The heavy-lift rocket "closes" when the player disarms or switches rings.
+export function closeLaunchBatch(state: SimState): void {
+  state.launchBatch = null
+}
+
 export function startWave(state: SimState): void {
   if (state.phase !== 'build') return
+  closeLaunchBatch(state)
   state.spawnQueue = generateWave(state.waveNumber)
   state.waveTime = 0
   state.phase = 'wave'
@@ -72,15 +121,96 @@ function len(v: Vec2): number {
   return Math.hypot(v.x, v.y)
 }
 
+// Up to n living enemies in range, ordered by distance to Earth (DESIGN.md §7).
+function findTargets(state: SimState, pos: Vec2, range: number, n: number): Enemy[] {
+  const inRange: Enemy[] = []
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue
+    const dx = enemy.pos.x - pos.x
+    const dy = enemy.pos.y - pos.y
+    if (dx * dx + dy * dy <= range * range) inRange.push(enemy)
+  }
+  inRange.sort((a, b) => len(a.pos) - len(b.pos))
+  return inRange.slice(0, n)
+}
+
+function detonate(
+  state: SimState,
+  x: number,
+  y: number,
+  damage: number,
+  blastRadius: number,
+  shrapnel: boolean,
+): void {
+  const outerRadius = blastRadius * SHRAPNEL_RADIUS_MULT
+  for (const enemy of state.enemies) {
+    if (enemy.hp <= 0) continue
+    const dx = enemy.pos.x - x
+    const dy = enemy.pos.y - y
+    const d2 = dx * dx + dy * dy
+    const inner = blastRadius + enemy.radius
+    if (d2 <= inner * inner) {
+      enemy.hp -= damage
+    } else if (shrapnel) {
+      const outer = outerRadius + enemy.radius
+      if (d2 <= outer * outer) enemy.hp -= damage * SHRAPNEL_DAMAGE_MULT
+    }
+  }
+  state.events.push({
+    type: 'explosion',
+    x,
+    y,
+    size: Math.max(0.12, (shrapnel ? outerRadius : blastRadius) * 0.85),
+  })
+}
+
+function spawnMissile(
+  state: SimState,
+  pos: Vec2,
+  target: Enemy,
+  cfg: HomingWeaponConfig,
+  damage: number,
+  blastRadius: number,
+): void {
+  const dx = target.pos.x - pos.x
+  const dy = target.pos.y - pos.y
+  const inv = 1 / (Math.hypot(dx, dy) || 1)
+  state.projectiles.push({
+    id: state.nextId++,
+    kind: 'missile',
+    pos: { ...pos },
+    vel: { x: dx * inv * cfg.projectileSpeed, y: dy * inv * cfg.projectileSpeed },
+    speed: cfg.projectileSpeed,
+    turnRate: cfg.projectileTurnRate,
+    damage,
+    blastRadius,
+    fuseRadius: 0,
+    shrapnel: false,
+    targetId: target.id,
+    ttl: 4,
+  })
+}
+
+function coolBeam(state: SimState, sat: Satellite, dt: number): void {
+  const cfg = effectiveWeapon(state, sat.weapon)
+  if (cfg.kind !== 'beam') return
+  sat.heat = Math.max(0, sat.heat - cfg.coolPerSec * dt)
+  if (sat.overheated && sat.heat <= cfg.refireHeat) sat.overheated = false
+}
+
 export function step(state: SimState, dt: number): void {
   state.time += dt
+  state.beams.length = 0
 
   // Satellites orbit in every phase — the world stays alive between waves.
   for (const sat of state.satellites) {
     sat.angle = (sat.angle + ringOmega(sat.ring) * dt) % (Math.PI * 2)
   }
 
-  if (state.phase !== 'wave') return
+  if (state.phase !== 'wave') {
+    for (const sat of state.satellites) coolBeam(state, sat, dt)
+    return
+  }
   state.waveTime += dt
 
   while (state.spawnQueue.length > 0 && state.spawnQueue[0].time <= state.waveTime) {
@@ -115,37 +245,76 @@ export function step(state: SimState, dt: number): void {
   }
 
   for (const sat of state.satellites) {
+    const cfg = effectiveWeapon(state, sat.weapon)
+    const pos = satPosition(sat)
+
+    if (cfg.kind === 'beam') {
+      const split = hasFlag(state, 'beamSplitter')
+      const targets = sat.overheated ? [] : findTargets(state, pos, cfg.range, split ? 2 : 1)
+      if (targets.length === 0) {
+        coolBeam(state, sat, dt)
+        continue
+      }
+      targets[0].hp -= cfg.dps * dt
+      state.beams.push({ satId: sat.id, sx: pos.x, sy: pos.y, tx: targets[0].pos.x, ty: targets[0].pos.y })
+      if (targets.length > 1) {
+        targets[1].hp -= cfg.dps * BEAM_SPLIT_RATIO * dt
+        state.beams.push({ satId: sat.id, sx: pos.x, sy: pos.y, tx: targets[1].pos.x, ty: targets[1].pos.y })
+      }
+      sat.heat += dt
+      if (sat.heat >= cfg.heatCapacity) sat.overheated = true
+      sat.sparkTimer -= dt
+      if (sat.sparkTimer <= 0) {
+        state.events.push({ type: 'explosion', x: targets[0].pos.x, y: targets[0].pos.y, size: 0.07 })
+        sat.sparkTimer = 0.12
+      }
+      continue
+    }
+
     sat.cooldown -= dt
     if (sat.cooldown > 0) continue
-    const cfg = WEAPONS[sat.weapon]
-    const pos = satPosition(sat)
-    let target: Enemy | null = null
-    let best = Infinity
-    for (const enemy of state.enemies) {
-      if (enemy.hp <= 0) continue
-      const dx = enemy.pos.x - pos.x
-      const dy = enemy.pos.y - pos.y
-      if (dx * dx + dy * dy > cfg.range * cfg.range) continue
-      const distToEarth = len(enemy.pos)
-      if (distToEarth < best) {
-        best = distToEarth
-        target = enemy
+
+    if (cfg.kind === 'homing') {
+      const mirv = hasFlag(state, 'mirv')
+      const targets = findTargets(state, pos, cfg.range, mirv ? MIRV_WARHEADS : 1)
+      if (targets.length === 0) continue
+      sat.shots += 1
+      if (hasFlag(state, 'nuke') && sat.shots % NUKE_EVERY === 0) {
+        spawnMissile(state, pos, targets[0], cfg, cfg.damage * NUKE_DAMAGE_MULT, cfg.blastRadius * NUKE_BLAST_MULT)
+      } else if (mirv) {
+        for (let i = 0; i < MIRV_WARHEADS; i++) {
+          spawnMissile(state, pos, targets[i % targets.length], cfg, cfg.damage * MIRV_DAMAGE_MULT, cfg.blastRadius)
+        }
+      } else {
+        spawnMissile(state, pos, targets[0], cfg, cfg.damage, cfg.blastRadius)
       }
+    } else {
+      const targets = findTargets(state, pos, cfg.range, 1)
+      if (targets.length === 0) continue
+      const target = targets[0]
+      // Flak shells are unguided: lead the target and burst on proximity or at max range.
+      const dist = Math.hypot(target.pos.x - pos.x, target.pos.y - pos.y)
+      const lead = dist / cfg.projectileSpeed
+      const aimX = target.pos.x + target.vel.x * lead
+      const aimY = target.pos.y + target.vel.y * lead
+      const dx = aimX - pos.x
+      const dy = aimY - pos.y
+      const inv = 1 / (Math.hypot(dx, dy) || 1)
+      state.projectiles.push({
+        id: state.nextId++,
+        kind: 'shell',
+        pos: { ...pos },
+        vel: { x: dx * inv * cfg.projectileSpeed, y: dy * inv * cfg.projectileSpeed },
+        speed: cfg.projectileSpeed,
+        turnRate: 0,
+        damage: cfg.damage,
+        blastRadius: cfg.blastRadius,
+        fuseRadius: cfg.fuseRadius,
+        shrapnel: hasFlag(state, 'shrapnel'),
+        targetId: -1,
+        ttl: (cfg.range * 1.2) / cfg.projectileSpeed,
+      })
     }
-    if (!target) continue
-    const dx = target.pos.x - pos.x
-    const dy = target.pos.y - pos.y
-    const inv = 1 / (Math.hypot(dx, dy) || 1)
-    state.projectiles.push({
-      id: state.nextId++,
-      pos: { ...pos },
-      vel: { x: dx * inv * cfg.projectileSpeed, y: dy * inv * cfg.projectileSpeed },
-      speed: cfg.projectileSpeed,
-      turnRate: cfg.projectileTurnRate,
-      damage: cfg.damage,
-      targetId: target.id,
-      ttl: 4,
-    })
     sat.cooldown = cfg.reloadSec
   }
 
@@ -154,40 +323,48 @@ export function step(state: SimState, dt: number): void {
 
   for (const p of state.projectiles) {
     p.ttl -= dt
-    const target = enemyById.get(p.targetId)
-    if (target && target.hp > 0) {
-      const desired = Math.atan2(target.pos.y - p.pos.y, target.pos.x - p.pos.x)
-      const current = Math.atan2(p.vel.y, p.vel.x)
-      let d = desired - current
-      while (d > Math.PI) d -= Math.PI * 2
-      while (d < -Math.PI) d += Math.PI * 2
-      const maxTurn = p.turnRate * dt
-      const heading = current + Math.max(-maxTurn, Math.min(maxTurn, d))
-      p.vel.x = Math.cos(heading) * p.speed
-      p.vel.y = Math.sin(heading) * p.speed
+    if (p.kind === 'missile') {
+      const target = enemyById.get(p.targetId)
+      if (target && target.hp > 0) {
+        const desired = Math.atan2(target.pos.y - p.pos.y, target.pos.x - p.pos.x)
+        const current = Math.atan2(p.vel.y, p.vel.x)
+        let d = desired - current
+        while (d > Math.PI) d -= Math.PI * 2
+        while (d < -Math.PI) d += Math.PI * 2
+        const maxTurn = p.turnRate * dt
+        const heading = current + Math.max(-maxTurn, Math.min(maxTurn, d))
+        p.vel.x = Math.cos(heading) * p.speed
+        p.vel.y = Math.sin(heading) * p.speed
+      }
     }
     p.pos.x += p.vel.x * dt
     p.pos.y += p.vel.y * dt
 
+    let boom = false
     for (const enemy of state.enemies) {
       if (enemy.hp <= 0) continue
       const dx = enemy.pos.x - p.pos.x
       const dy = enemy.pos.y - p.pos.y
-      const hitDist = enemy.radius + 0.05
+      const hitDist = enemy.radius + (p.kind === 'missile' ? 0.05 : p.fuseRadius)
       if (dx * dx + dy * dy <= hitDist * hitDist) {
-        enemy.hp -= p.damage
-        p.ttl = 0
-        state.events.push({ type: 'explosion', x: p.pos.x, y: p.pos.y, size: 0.12 })
+        boom = true
         break
       }
+    }
+    if (!boom && p.kind === 'shell' && p.ttl <= 0) boom = true // air burst at max range
+    if (boom) {
+      detonate(state, p.pos.x, p.pos.y, p.damage, p.blastRadius, p.shrapnel)
+      p.ttl = 0
     }
   }
   state.projectiles = state.projectiles.filter((p) => p.ttl > 0)
 
+  const salvage = salvageMult(state)
   for (const enemy of state.enemies) {
     if (enemy.hp > 0 || enemy.reward === 0) continue
-    state.credits += enemy.reward
-    state.creditsEarned += enemy.reward
+    const reward = Math.round(enemy.reward * salvage)
+    state.credits += reward
+    state.creditsEarned += reward
     state.kills += 1
     state.events.push({ type: 'explosion', x: enemy.pos.x, y: enemy.pos.y, size: 0.3 })
   }
